@@ -1,3 +1,4 @@
+from tempfile import NamedTemporaryFile
 import sys
 from bs4 import BeautifulSoup
 import tensorflow as tf
@@ -5,7 +6,6 @@ from keras.models import load_model, Sequential, Model # basic class for specify
 from keras.layers import Reshape,Input, Conv2D, MaxPooling2D, Dense, Dropout, Flatten
 from keras.utils import np_utils # utilities for one-hot encoding of ground truth values
 from scipy import ndimage
-from matplotlib import pyplot as plt
 import numpy as np
 import json
 import ssl
@@ -45,6 +45,8 @@ def run_process(process_str, verbose=False):
         print(process_stf)
     process = Popen(process_str.split(' '),stdout = PIPE, stderr = PIPE) 
     stdout, stderr = process.communicate()
+    if not stdout:
+        raise RuntimeError(stderr)
     return(stdout)
 
 
@@ -82,10 +84,12 @@ class crawlerReceita:
         """
         url = "https://www.receita.fazenda.gov.br/PessoaJuridica/CNPJ/cnpjreva/captcha/gerarCaptcha.asp"
         pagina = self.sessao.get(url)
-        open('teste.png','wb').write(pagina)
-        imagem_data = (ndimage.imread('teste.png'))
-#        plt.imshow(imagem_data)
-#        plt.show()
+        tmp = NamedTemporaryFile(suffix='.png')
+
+        with open(tmp.name, 'wb') as fobj:
+            fobj.write(pagina)
+
+        imagem_data = (ndimage.imread(tmp.name))
 
         # Site da receita exige tempo de espera
         time.sleep(1)
@@ -93,6 +97,7 @@ class crawlerReceita:
         imagem_data = imagem_data.reshape(1,50,180,4)
         predicao = quebra_captcha(imagem_data).flatten()
         predicao = ''.join([ classes[x] for x in predicao ]).lower()
+        tmp.close()
         return(predicao)
 
     def consulta_cnpj(self, cnpj):
