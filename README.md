@@ -10,7 +10,7 @@ O script necessita do software 'curl' para rodar. No linux debian/ubuntu, basta 
 
 Também devem ser instaladas as dependências 'tensorflow' e 'keras':
 
-    pip install tensorflow keras
+    pip install -r requirements.txt
 
 Por fim, o arquivo que carrega o modelo deve estar incluído na pasta do script. https://drive.google.com/file/d/1-I75klD5hnfY8TFogYJ9mLmBrF2Vg9Gw/view
 

@@ -47,11 +47,6 @@ def run_process(process_str, verbose=False):
     stdout, stderr = process.communicate()
     return(stdout)
 
-
-
-
-
-
 class Session:
     """ Class created in order to handle curl on terminal directly
     """
@@ -66,10 +61,6 @@ class Session:
         data = '&'.join([ key + '=' + str(data[key]) for key in data.keys() ])
         pagina = run_process('curl -d "' + data + '" -H "Content-Type: application/x-www-form-urlencoded" --tlsv1.0 -k -b cookiefile -c cookiefile ' + url)
         return pagina
-
-
-
-
 
 class crawlerReceita:
     def __init__(self):
@@ -148,39 +139,3 @@ class crawlerReceita:
                         [j.text.strip() for j in i.find_all('font')[1:] ]
                             )
         return dados
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
