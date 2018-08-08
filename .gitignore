@@ -1,4 +1,4 @@
 *.pyc
 __pycache__/
 captcha_receita.h5
-cookiefile
+data/

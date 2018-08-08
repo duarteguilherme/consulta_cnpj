@@ -1,191 +1,137 @@
-from tempfile import NamedTemporaryFile
-import sys
-from bs4 import BeautifulSoup
-import tensorflow as tf
-from keras.models import load_model, Sequential, Model # basic class for specifying and training a neural network
-from keras.layers import Reshape,Input, Conv2D, MaxPooling2D, Dense, Dropout, Flatten
-from keras.utils import np_utils # utilities for one-hot encoding of ground truth values
-from scipy import ndimage
-import numpy as np
-import json
-import ssl
-from subprocess import Popen, PIPE
+"""
+In order to use this crawler, we'll not be employing requests.  Instead, we'll
+be using curl through subprocess module. The reason is certificates and TLS on
+government webpages in Brazil are deprecated. It's not easy to handle the
+problem using requests.
+"""
+
 import time
+from contextlib import ContextDecorator
+from urllib.parse import urlencode
+from tempfile import NamedTemporaryFile
+
+import numpy as np
+from bs4 import BeautifulSoup
+from keras.models import load_model
+from scipy import ndimage
+from subprocess import Popen, PIPE
 
 
-# In order to use this crawler, we'll not be employing requests
-# Instead, we'll be using curl through subprocess module
-# The reason is certificates and TSL on government webpages in Brazil are deprecated
-# It's not easy to handle the problem using requests
+class Session(ContextDecorator):
+    """Context manager to handle curl on terminal directly"""
 
+    URL = "https://www.receita.fazenda.gov.br/pessoajuridica/cnpj/cnpjreva/{}"
 
-# Funcoes relativas ao modelo que quebra o captcha do tse
-def carrega_modelo():
-    """ Load 'CNPJ' model
-    """
-    model = load_model('captcha_receita.h5')
-    return model
+    def __enter__(self):
+        self.cookies = NamedTemporaryFile()
+        self.curl = "curl --tlsv1.0 -ksS -b {} -c {}".format(
+            self.cookies.name, self.cookies.name
+        )
+        self.get("cnpjreva_solicitacao.asp")
+        return self
 
-model = carrega_modelo()
-classes = dict(zip(list(range(35)), ['O', 'F', 'V', 'R', 'W', '7', '9', '4', 'D', 'Q', '6', 'E', 'M', '3', 'Y', 'B', 'J', '8', 'N', 'G', 'P', '1', 'T', 'X', '2', 'H', 'Z', 'I', 'K', 'C', 'S', 'A', 'L', '5', 'U']))
-num_classes = len(classes)
+    def __exit__(self, *args):
+        self.cookies.close()
 
-def quebra_captcha(captcha):
-    captcha = captcha.astype('float32')
-    captcha /= np.max(captcha)
-    prediction = model.predict_classes(captcha.astype('float32')) 
-    return(prediction)
+    @staticmethod
+    def run_process(process_str, verbose=False):
+        """Run `process_str` on terminal. This function will be useful in order
+        to execute `curl` on terminal."""
+        if verbose:
+            print(process_str)
 
+        process = Popen(process_str.split(" "), stdout=PIPE, stderr=PIPE)
+        stdout, stderr = process.communicate()
+        if not stdout:
+            raise RuntimeError(
+                "{}\nwhen trying to run\n\n$ {}".format(
+                    stderr.decode("utf-8"), process_str
+                )
+            )
 
-def run_process(process_str, verbose=False):
-    """ Run 'process_str' on terminal
-    This function will be useful in order to execute curl on terminal
-    """
-    if verbose:
-        print(process_stf)
-    process = Popen(process_str.split(' '),stdout = PIPE, stderr = PIPE) 
-    stdout, stderr = process.communicate()
-    if not stdout:
-        raise RuntimeError(stderr)
-    return(stdout)
-
-
-
-
-
-
-class Session:
-    """ Class created in order to handle curl on terminal directly
-    """
-    def __init__(self):
-        open("cookiefile", "w")
+        return stdout
 
     def get(self, url):
-        pagina = run_process("curl --tlsv1.0 -k -b cookiefile -c cookiefile " + url)
-        return pagina
+        url = self.URL.format(url)
+        return self.run_process("{} {}".format(self.curl, url))
 
     def post(self, url, data):
-        data = '&'.join([ key + '=' + str(data[key]) for key in data.keys() ])
-        pagina = run_process('curl -d "' + data + '" -H "Content-Type: application/x-www-form-urlencoded" --tlsv1.0 -k -b cookiefile -c cookiefile ' + url)
-        return pagina
+        url = self.URL.format(url)
+        data = urlencode(data)
+        cmd = '{} -d "{}" -H "Content-Type: application/x-www-form-urlencoded" {}'
+        return self.run_process(cmd.format(self.curl, data, url))
 
 
-
-
-
-class crawlerReceita:
-    def __init__(self):
-        self.sessao = Session()
-        pagina = self.sessao.get("https://www.receita.fazenda.gov.br/pessoajuridica/cnpj/cnpjreva/cnpjreva_solicitacao.asp")
-        
-    def baixa_captcha(self):
-        """ Este metodo baixa captcha da receita
-        e já quebra usando modelo feito em keras
-        """
-        url = "https://www.receita.fazenda.gov.br/PessoaJuridica/CNPJ/cnpjreva/captcha/gerarCaptcha.asp"
-        pagina = self.sessao.get(url)
-        tmp = NamedTemporaryFile(suffix='.png')
-
-        with open(tmp.name, 'wb') as fobj:
-            fobj.write(pagina)
-
-        imagem_data = (ndimage.imread(tmp.name))
-
-        # Site da receita exige tempo de espera
-        time.sleep(1)
-
-        imagem_data = imagem_data.reshape(1,50,180,4)
-        predicao = quebra_captcha(imagem_data).flatten()
-        predicao = ''.join([ classes[x] for x in predicao ]).lower()
-        tmp.close()
-        return(predicao)
-
-    def consulta_cnpj(self, cnpj):
-        """ Método para consulta de cnpj,
-        Basta inserir cnpj sem traço ou ponto e
-        ele retorna um dicionario com os dados
-        """
-        captcha = self.baixa_captcha()
-        dados_post = {
-                "origem":"comprovante",
-                "cnpj":"01109184000195",
-                "txtTexto_captcha_serpro_gov_br":captcha,
-                "submit1":"Consultar",
-                "search_type":"cnpj"
+class CrawlerReceita:
+    def __init__(self, path_to_model=None):
+        self.model = load_model(path_to_model or "captcha_receita.h5")
+        self.classes = {
+            index: char
+            for index, char in enumerate("OFVRW794DQ6EM3YBJ8NGP1TX2HZIKCSAL5U")
         }
 
-        # 1)
-        self.sessao.get("https://www.receita.fazenda.gov.br/pessoajuridica/cnpj/cnpjreva/Cnpjreva_solicitacao3.asp")
+    def solve_captcha(self, session):
+        """Method to download and solve the captcha using Keras."""
+        image_in_bytes = session.get("captcha/gerarCaptcha.asp")
+        tmp = NamedTemporaryFile(suffix=".png")
+        with open(tmp.name, "wb") as fobj:
+            fobj.write(image_in_bytes)
 
-        # 2) Post
-        pagina_validacao = self.sessao.post('https://www.receita.fazenda.gov.br/pessoajuridica/cnpj/cnpjreva/valida.asp', data = dados_post)
-        link_dados  = 'https://www.receita.fazenda.gov.br/pessoajuridica/cnpj/cnpjreva/' + BeautifulSoup(pagina_validacao, "html.parser").find('a')['href'].strip()
-        proxima_pagina = self.sessao.get(link_dados)
+        time.sleep(1)  # this website demands a certain wait time
+        data = ndimage.imread(tmp.name)
+        data = data.reshape(1, 50, 180, 4)
 
-        # 3)
-        self.sessao.get('https://www.receita.fazenda.gov.br/pessoajuridica/cnpj/cnpjreva/Cnpjreva_Vstatus.asp?origem=comprovante&cnpj=' + cnpj)
+        captcha = data.astype("float32")
+        captcha /= np.max(captcha)
 
-        # 4)
-        self.sessao.get('https://www.receita.fazenda.gov.br/pessoajuridica/cnpj/cnpjreva/Cnpjreva_Campos.asp')
+        prediction = self.model.predict_classes(captcha.astype("float32"))
+        prediction = "".join(self.classes[x] for x in prediction.flatten())
 
-        # 5)
-        pagina = self.sessao.get('https://www.receita.fazenda.gov.br/pessoajuridica/cnpj/cnpjreva/Cnpjreva_Comprovante.asp') 
-        if "Cnpjreva_Erro.asp" in pagina.decode('latin1'):
-            raise Exception('Erro na continuidade. Provavelmente modelo não acertou captcha. Tente novamente')
-        else:
-            return self.parse_page(pagina.decode('latin1'))
+        tmp.close()
+        return prediction.lower()
+
+    def __call__(self, cnpj):
+        """Method to query a CNPJ. Input bust be a CNPJ (only numbers, no
+        punctuation). It returns a dict."""
+        with Session() as session:
+            captcha = self.solve_captcha(session)
+            data = {
+                "origem": "comprovante",
+                "cnpj": cnpj,
+                "txtTexto_captcha_serpro_gov_br": captcha,
+                "submit1": "Consultar",
+                "search_type": "cnpj",
+            }
+
+            session.get("Cnpjreva_solicitacao3.asp")
+            validation = session.post("valida.asp", data=data)
+
+            html = BeautifulSoup(validation, "html.parser")
+            next_link = html.find("a")["href"].strip()
+            session.get(next_link)
+            session.get("Cnpjreva_Vstatus.asp?origem=comprovante&cnpj={}".format(cnpj))
+            session.get("Cnpjreva_Campos.asp")
+            result = session.get("Cnpjreva_Comprovante.asp").decode("latin1")
+
+            if "Cnpjreva_Erro.asp" in result:
+                raise RuntimeError(
+                    ("CAPTCHA probably failed. I'm afraid you'll have to try again.")
+                )
+
+            return self.parse_page(result)
 
     def parse_page(self, page):
-        """ Limpa a página recebida e retorna dados
-        """
-        parsed_page = BeautifulSoup(page, "html.parser")
+        parsed = BeautifulSoup(page, "html.parser")
+        cells = (
+            table.find_all("td")
+            for table in parsed.find_all("table", attrs={"border": 0})
+        )
 
-        # This part could be implemented with dict comprehension
-        # It was written with for and ifs for readability
-        tabelas = parsed_page.find_all('table',attrs={'border':0})
-        tds = []
-        for i in tabelas:
-            tds += i.find_all('td')
-        dados = { }
-        for i in tds:
-            if len(i.find_all('font')) >= 2:
-                dados[i.find_all('font')[0].text.strip()] = '#'.join(
-                        [j.text.strip() for j in i.find_all('font')[1:] ]
-                            )
-        return dados
+        data = {}
+        for cell in cells:
+            if len(cell.find_all("font")) < 2:
+                continue
+            key, *values = cell.find_all("font")
+            data[key] = values[0] if len(values) == 1 else values
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        return data
