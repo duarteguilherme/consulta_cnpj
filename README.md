@@ -1,28 +1,43 @@
 # Consulta CNPJ
 
-Consulta de CNPJ no site da receita, quebrando o captcha, implementado em python.
+Consulta de CNPJ no site da receita, quebrando o captcha, implementado em
+Python.
 
-O modelo para quebra de captcha foi criado com base no brilhante trabalho de Daniel Falbel, Julio Trecenti, Caio Lente, Athos Damiani e todo o pessoal do decryptr (https://github.com/decryptr).  Inclusive a base de treino usada foi coletada por eles. 
+O modelo para quebra de captcha foi criado com base no brilhante trabalho de
+Daniel Falbel, Julio Trecenti, Caio Lente, Athos Damiani e todo o pessoal do
+[decryptr](https://github.com/decryptr). Inclusive a base de treino usada foi
+coletada por eles.
 
-O script necessita do software 'curl' para rodar. No linux debian/ubuntu, basta rodar:
+## Instalação
 
-    sudo apt-get install curl
+Antes de mais nada você precisar ter disponível
+[arquivo que carrega o modelo](https://drive.google.com/file/d/1-I75klD5hnfY8TFogYJ9mLmBrF2Vg9Gw/view).
 
-Também devem ser instaladas as dependências 'tensorflow' e 'keras':
+O script necessita do software `curl` para rodar. No Linux Debian/Ubuntu, basta
+rodar:
 
-    pip install tensorflow keras
+```sh
+$ sudo apt-get install curl
+```
 
-Por fim, o arquivo que carrega o modelo deve estar incluído na pasta do script. https://drive.google.com/file/d/1-I75klD5hnfY8TFogYJ9mLmBrF2Vg9Gw/view
+Também devem ser instaladas as dependências listadas no `requirements.txt`.
 
-
+## Uso
 
 Para usar o scraper:
 
-	from consulta_cnpj import crawlerReceita
-    x = crawlerReceita()
-    print(x.consulta_cnpj('60701190000104'))
+```python
+from consulta_cnpj import CrawlerReceita
+crawler = CrawlerReceita()
+print(crawler("60701190000104"))
+```
 
-O modelo que quebra o captcha está com acurácia de 75%. Mais pra frente, vou deixá-lo rodando mais tempo para chegar a uns 95%.
+Se o `captcha_receita.h5` não estiver na raíz do projeto, você pode passar a
+localização dele na hora de instanciar a classe `CrawlerReceita`:
 
+```python
+crawler = CrawlerReceita("/path/to/my/models/whatever.h5")
+```
 
-
+O modelo que quebra o captcha está com acurácia de 75%. Mais pra frente, vou
+deixá-lo rodando mais tempo para chegar a uns 95%.
