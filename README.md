@@ -46,7 +46,6 @@ localização dele na hora de instanciar a classe `CrawlerReceita`:
 
 ```python
 crawler = CrawlerReceita("/path/to/my/models/whatever.h5")
->>>>>>> Refactor main module
 ```
 
 O modelo que quebra o captcha está com acurácia de 75%. Mais pra frente, vou
